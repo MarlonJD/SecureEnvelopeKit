@@ -4,7 +4,7 @@ Date: 2026-06-01
 
 Owner subtree: `packages/SecureEnvelopeKit`
 
-Status: Proposed
+Status: Implemented
 
 ## Goal
 
