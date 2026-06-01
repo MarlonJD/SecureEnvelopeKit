@@ -1,120 +1,87 @@
 # SecureEnvelopeKit
 
-Product-independent secure envelope protocol kit.
+Product-independent secure envelope protocol, implemented natively for Apple,
+Android, and .NET from one shared contract and one shared test vector.
 
-## Overview
+A Secure Envelope binds caller-provided public metadata to a confidential
+payload using authenticated encryption (AES-256-GCM) with an HKDF-SHA-256
+content key. It is deliberately small: it does not know about app state,
+accounts, databases, notification UI, networking, ratchets, ML-KEM, or message
+history. The caller supplies input key material; everything else is the
+envelope's job.
 
-SecureEnvelopeKit is a small SwiftPM package for Apple-platform secure payload
-envelopes. It provides deterministic binary envelope serialization, typed
-parsing failures, CryptoKit-backed AES-256-GCM encryption, CryptoKit HKDF-SHA-256
-content-key derivation, and Security.framework-backed random salt and nonce
-generation.
+## Repository layout
 
-The package is intentionally product-independent. It does not know about app
-state, accounts, databases, notification UI, network calls, ratchets, ML-KEM
-implementations, or message history.
+```text
+SecureEnvelopeKit/
+  Package.swift                 # thin SwiftPM shim for public consumers -> platforms/swift
+  docs/
+    SECURITY.md                 # shared, cross-platform security model
+    spec/                       # product-independent envelope contract (source of truth)
+    plans/                      # implementation plans
+  fixtures/
+    SecureEnvelopeV1/           # shared v1 wire-format / cross-platform vector
+  platforms/
+    swift/                      # iOS + macOS (SwiftPM, CryptoKit)
+    android/                    # Android/JVM (Gradle + Kotlin, JCA)
+    dotnet/                     # Windows/.NET (System.Security.Cryptography)
+```
 
-## Installation
+The contract lives in [`docs/spec/secure-envelope-v1.md`](docs/spec/secure-envelope-v1.md)
+and the shared interoperability vector in
+[`fixtures/SecureEnvelopeV1/secure-envelope-v1.json`](fixtures/SecureEnvelopeV1/secure-envelope-v1.json).
+All three implementations conform to both, so an envelope sealed on one platform
+opens on the others, byte for byte.
 
-Add the package to an Apple SwiftPM consumer:
+## Platforms
+
+| Platform | Path | Build/test |
+| --- | --- | --- |
+| Swift (iOS/macOS) | [`platforms/swift`](platforms/swift) | `cd platforms/swift && swift test` |
+| Android/Kotlin (JVM) | [`platforms/android`](platforms/android) | `cd platforms/android && ./gradlew test` |
+| .NET | [`platforms/dotnet`](platforms/dotnet) | `cd platforms/dotnet && dotnet test` |
+
+Each platform uses only its ecosystem's reviewed, provider-backed crypto. None
+of them implement AES, SHA-256, HMAC, GCM, HKDF internals, or RNG by hand.
+
+## Using it
+
+### Swift (SwiftPM)
 
 ```swift
 .package(url: "https://github.com/MarlonJD/SecureEnvelopeKit.git", branch: "main")
 ```
 
-Then depend on the library product:
-
 ```swift
 .product(name: "SecureEnvelopeKit", package: "SecureEnvelopeKit")
 ```
 
-Supported platforms:
+The root `Package.swift` is a compatibility entry point; the canonical Swift
+package and tests live under [`platforms/swift`](platforms/swift).
 
-- iOS 15 and later
-- macOS 12 and later
+### Android / .NET
 
-## Quick Start
+See [`platforms/android/README.md`](platforms/android/README.md) and
+[`platforms/dotnet/README.md`](platforms/dotnet/README.md) for Gradle and NuGet
+usage.
 
-```swift
-import Foundation
-import SecureEnvelopeKit
+## Cross-platform parity
 
-let keyMaterial = Data(repeating: 0x42, count: 32)
-let metadata = SecureEnvelopeMetadata(
-    keyIdentifier: Data("recipient-key-v1".utf8),
-    publicContext: Data("preview".utf8)
-)
+The shared fixture is the contract's enforcement mechanism. Each platform's
+tests both **reproduce** the fixture envelope bytes from its inputs (encrypt
+parity) and **open** the committed envelope bytes to recover the plaintext
+(decrypt parity). Every platform also verifies that tampering with the header,
+ciphertext, or tag fails authentication. Do not integrate a platform into an app
+until it passes fixture parity.
 
-let envelope = try SecureEnvelopeSealer().seal(
-    plaintext: Data("hello".utf8),
-    keyMaterial: keyMaterial,
-    metadata: metadata
-)
+## Security
 
-let plaintext = try SecureEnvelopeOpener().open(
-    envelope: envelope,
-    keyMaterial: keyMaterial
-)
-```
+See [`docs/SECURITY.md`](docs/SECURITY.md) for the shared security model and each
+platform's `docs/SECURITY.md` for provider-specific notes.
 
-`serializedData` is the canonical wire representation:
+## Non-goals
 
-```swift
-let bytes = envelope.serializedData
-let parsed = try SecureEnvelope(serializedData: bytes)
-```
-
-## Wire Format
-
-Version 1 uses a fixed-order binary format:
-
-1. Magic bytes: `SEK`
-2. Version byte
-3. Suite identifier: unsigned 16-bit big-endian
-4. Key identifier: unsigned 16-bit byte length, then bytes
-5. Public context: unsigned 32-bit byte length, then bytes
-6. Salt: unsigned 8-bit byte length, then 32 bytes
-7. Nonce: unsigned 8-bit byte length, then 12 bytes
-8. Ciphertext length: unsigned 32-bit byte length
-9. Tag length: unsigned 8-bit byte length
-10. Ciphertext bytes
-11. Tag bytes
-
-The deterministic header through the tag-length byte is authenticated as
-AES-GCM additional authenticated data. Unknown versions, unknown suites,
-truncated fields, empty key identifiers, invalid fixed lengths, and trailing
-bytes are rejected.
-
-## Supported Algorithms
-
-`SecureEnvelopeSuite.v1AES256GCMHKDFSHA256` uses:
-
-- AES-256-GCM through CryptoKit for authenticated encryption.
-- HKDF-SHA-256 through CryptoKit to derive a per-envelope content key.
-- A 32-byte random salt generated through Security.framework.
-- A 12-byte random AES-GCM nonce generated through Security.framework.
-
-The caller supplies at least 32 bytes of input key material. That material can
-come from a higher-level key agreement or ratchet, but those systems are outside
-this package.
-
-## Preview Hot Path
-
-`SecureEnvelopePreview` is for small caller-provided preview payload envelopes.
-It parses metadata, authenticates the deterministic header as AAD, decrypts the
-preview payload, enforces a caller-owned maximum plaintext size, and returns
-`SecureEnvelopePreviewResult`.
-
-The preview helper is synchronous and has no storage, network, synchronization,
-ratchet, ML-KEM, history, or notification UI dependencies.
-
-## Non-Goals
-
-SecureEnvelopeKit does not implement:
-
-- ML-KEM or any key agreement primitive.
-- Double-ratchet state, session setup, or message history.
-- Database, network, search, sync, notification UI, or app extension behavior.
-- Account recovery, key backup, or server-side envelope storage.
-- Cross-platform implementations. The v1 binary format is designed to be shared
-  with other platform implementations later.
+SecureEnvelopeKit does not implement ML-KEM or any key agreement, double-ratchet
+state, session setup, message history, databases, networking, notification UI,
+account recovery, or server-side storage. The v1 binary format is intentionally
+shared across platforms rather than reinvented per platform.

@@ -93,9 +93,21 @@ final class SecureEnvelopeKitTests: XCTestCase {
     }
 
     func testStableBinaryEncodingFixture() throws {
+        let fixture = try SecureEnvelopeV1Fixture.load()
         let envelope = try deterministicEnvelope()
 
-        XCTAssertEqual(envelope.serializedData.hexEncodedString(), stableFixtureHex)
+        XCTAssertEqual(fixture.version, 1)
+        XCTAssertEqual(fixture.suiteIdHex, "0001")
+        XCTAssertEqual(try fixture.hexData(fixture.keyMaterialHex), keyMaterial)
+        XCTAssertEqual(try fixture.hexData(fixture.saltHex), salt)
+        XCTAssertEqual(try fixture.hexData(fixture.nonceHex), nonce)
+        XCTAssertEqual(try fixture.hexData(fixture.keyIdentifierHex), metadata.keyIdentifier)
+        XCTAssertEqual(try fixture.hexData(fixture.publicContextHex), metadata.publicContext)
+        XCTAssertEqual(try fixture.hexData(fixture.plaintextHex), plaintext)
+        XCTAssertEqual(envelope.authenticatedHeader.hexEncodedString(), fixture.authenticatedHeaderHex)
+        XCTAssertEqual(envelope.ciphertext.hexEncodedString(), fixture.ciphertextHex)
+        XCTAssertEqual(envelope.tag.hexEncodedString(), fixture.tagHex)
+        XCTAssertEqual(envelope.serializedData.hexEncodedString(), fixture.envelopeHex)
         XCTAssertEqual(try SecureEnvelope(serializedData: envelope.serializedData).serializedData, envelope.serializedData)
     }
 
@@ -119,6 +131,7 @@ final class SecureEnvelopeKitTests: XCTestCase {
     }
 
     func testHKDFDerivationIsDeterministic() throws {
+        let fixture = try SecureEnvelopeV1Fixture.load()
         let first = try SecureEnvelopeCrypto.deriveContentKeyBytes(
             keyMaterial: keyMaterial,
             salt: salt,
@@ -137,7 +150,8 @@ final class SecureEnvelopeKitTests: XCTestCase {
 
         XCTAssertEqual(first, second)
         XCTAssertNotEqual(first, differentSalt)
-        XCTAssertEqual(first.hexEncodedString(), stableDerivedKeyHex)
+        XCTAssertEqual(fixture.hkdfInfoUtf8, "SecureEnvelopeKit/v1/aes-256-gcm+hkdf-sha256")
+        XCTAssertEqual(first.hexEncodedString(), fixture.derivedContentKeyHex)
     }
 
     func testInvalidInputsAreRejected() throws {
@@ -173,9 +187,6 @@ final class SecureEnvelopeKitTests: XCTestCase {
     }
 }
 
-private let stableFixtureHex = "53454b01000100056b65792d31000000077072657669657720202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f0c606162636465666768696a6b0000001510f9ed2ee278a37844640700bb1a3870151388432ef2ae8a56423081a3a8d0672d06eb5f6d0f"
-private let stableDerivedKeyHex = "614aa5ec2c8bab156b0813ced2ab5d430aba2ee7989a0428e3c9507780770429"
-
 private func XCTAssertThrowsSecureEnvelopeError(
     _ expectedError: SecureEnvelopeError,
     _ expression: () throws -> Void,
@@ -187,7 +198,77 @@ private func XCTAssertThrowsSecureEnvelopeError(
     }
 }
 
+private struct SecureEnvelopeV1Fixture: Decodable {
+    let fixtureVersion: Int
+    let status: String
+    let name: String
+    let version: Int
+    let suite: String
+    let suiteIdHex: String
+    let hkdfInfoUtf8: String
+    let keyMaterialHex: String
+    let saltHex: String
+    let nonceHex: String
+    let keyIdentifierHex: String
+    let publicContextHex: String
+    let plaintextHex: String
+    let authenticatedHeaderHex: String
+    let ciphertextHex: String
+    let tagHex: String
+    let envelopeHex: String
+    let derivedContentKeyHex: String
+
+    static func load() throws -> SecureEnvelopeV1Fixture {
+        // This test file lives at platforms/swift/Tests/SecureEnvelopeKitTests/.
+        // Walk up to the SecureEnvelopeKit repository root, where the shared
+        // cross-platform fixtures live under fixtures/.
+        let testFileURL = URL(fileURLWithPath: #filePath)
+        let repositoryRootURL = testFileURL
+            .deletingLastPathComponent() // SecureEnvelopeKitTests/
+            .deletingLastPathComponent() // Tests/
+            .deletingLastPathComponent() // platforms/swift/
+            .deletingLastPathComponent() // platforms/
+            .deletingLastPathComponent() // repository root
+        let fixtureURL = repositoryRootURL
+            .appendingPathComponent("fixtures")
+            .appendingPathComponent("SecureEnvelopeV1")
+            .appendingPathComponent("secure-envelope-v1.json")
+        let data = try Data(contentsOf: fixtureURL)
+        let fixture = try JSONDecoder().decode(SecureEnvelopeV1Fixture.self, from: data)
+        XCTAssertEqual(fixture.fixtureVersion, 1)
+        XCTAssertEqual(fixture.status, "stable")
+        XCTAssertEqual(fixture.name, "secure-envelope-v1-aes-256-gcm-hkdf-sha256")
+        XCTAssertEqual(fixture.suite, "v1AES256GCMHKDFSHA256")
+        return fixture
+    }
+
+    func hexData(_ hex: String) throws -> Data {
+        try Data(hexEncodedString: hex)
+    }
+}
+
 private extension Data {
+    init(hexEncodedString hex: String) throws {
+        guard hex.count.isMultiple(of: 2) else {
+            throw SecureEnvelopeError.malformedEnvelope
+        }
+
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(hex.count / 2)
+
+        var index = hex.startIndex
+        while index < hex.endIndex {
+            let nextIndex = hex.index(index, offsetBy: 2)
+            guard let byte = UInt8(hex[index..<nextIndex], radix: 16) else {
+                throw SecureEnvelopeError.malformedEnvelope
+            }
+            bytes.append(byte)
+            index = nextIndex
+        }
+
+        self = Data(bytes)
+    }
+
     func hexEncodedString() -> String {
         map { String(format: "%02x", $0) }.joined()
     }

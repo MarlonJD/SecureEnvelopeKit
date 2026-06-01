@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>SecureEnvelopeKit</RootNamespace>
+    <AssemblyName>SecureEnvelopeKit</AssemblyName>
+    <PackageId>SecureEnvelopeKit</PackageId>
+    <Version>0.1.0</Version>
+    <Description>Product-independent secure envelope protocol (AES-256-GCM + HKDF-SHA-256), .NET implementation.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SecureEnvelopeKit.Tests" />
+  </ItemGroup>
+
+</Project>
