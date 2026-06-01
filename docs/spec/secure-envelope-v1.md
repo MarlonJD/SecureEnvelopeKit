@@ -25,7 +25,10 @@ payload using authenticated encryption. The envelope provides:
 
 Out of scope (the caller or a higher layer owns these): key agreement, ML-KEM,
 identity, sessions, ratchets, persistence, networking, history sync, and
-notification UI. The caller supplies input key material; the envelope does not
+notification UI. This includes Triple Ratchet, Sparse Post-Quantum Ratchet,
+Double Ratchet, session state, skipped-message keys, prekey claiming, replay
+windows, roster verification, transcript signatures, message repair, and full
+message decrypt. The caller supplies input key material; the envelope does not
 create or manage it.
 
 ## 2. Terminology and constants

@@ -74,6 +74,26 @@ parity) and **open** the committed envelope bytes to recover the plaintext
 ciphertext, or tag fails authentication. Do not integrate a platform into an app
 until it passes fixture parity.
 
+## Ratchet boundary
+
+SecureEnvelopeKit is not a Triple Ratchet, Sparse Post-Quantum Ratchet, Double
+Ratchet, or session-state implementation. Those belong to a higher-level E2EE
+client/session layer.
+
+This package intentionally stops at the versioned envelope boundary:
+
+- deterministic envelope encoding and decoding,
+- authenticated header/AAD bytes,
+- AES-256-GCM seal/open,
+- HKDF-SHA-256 envelope key derivation,
+- preview-only open helpers,
+- shared cross-platform fixtures.
+
+A future session layer can consume SecureEnvelopeKit together with an ML-KEM
+provider such as `mlkem-kit`, but it must own session state, ratchet
+advancement, skipped-message keys, prekey claiming, replay windows, roster
+verification, transcript signatures, repair, and full message decrypt.
+
 ## Security
 
 See [`docs/SECURITY.md`](docs/SECURITY.md) for the shared security model and each

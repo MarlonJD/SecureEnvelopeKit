@@ -16,6 +16,21 @@ agreement, ratchet, or key-management system. The package does not create
 identities, establish sessions, advance ratchets, persist secrets, or contact
 remote services.
 
+## Ratchet Boundary
+
+SecureEnvelopeKit is not a Triple Ratchet, Sparse Post-Quantum Ratchet, Double
+Ratchet, or session-state implementation. It does not own X25519 ratchet state,
+ML-KEM Braid/SPQR advancement, symmetric ratchet advancement, skipped-message
+keys, prekey claiming, replay windows, roster verification, transcript
+signatures, message repair, or full message decrypt.
+
+Those responsibilities belong to a higher-level E2EE client/session layer. That
+layer may use SecureEnvelopeKit for deterministic envelope encoding, AAD/header
+construction, AES-GCM seal/open, HKDF envelope-key derivation, preview-only open
+helpers, and fixture parity. It may use `mlkem-kit` for ML-KEM primitive
+operations. Notification preview code must not call the session layer or
+advance ratchet state.
+
 ## Algorithms (suite `v1AES256GCMHKDFSHA256`)
 
 - AES-256-GCM for authenticated encryption (12-byte nonce, 16-byte tag).
