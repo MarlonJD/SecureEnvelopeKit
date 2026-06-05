@@ -36,7 +36,10 @@ rejected before any decryption.
 
 `KeyIdentifier` and `PublicContext` are authenticated but world-readable. Do not
 place secrets in them. Metadata bytes are defensively copied on construction and
-exposed as `ReadOnlyMemory<byte>`.
+exposed as `ReadOnlyMemory<byte>`. Parsed metadata is authenticated only after
+`SecureEnvelopeOpener` or `SecureEnvelopePreview` successfully verifies AES-GCM
+with the expected key material; before that point it is an untrusted routing hint
+for key lookup, not an authorization or UI trust signal.
 
 ## Scope boundaries
 
@@ -44,4 +47,6 @@ This library has no dependency on Windows DPAPI, CNG key storage, certificate
 stores, networking, history sync, ratchets, ML-KEM, or notification UI. Key
 storage/wrapping belongs in a separate optional adapter, not in the envelope
 core. The preview helper only parses metadata, authenticates the header as AAD,
-decrypts a bounded payload, and returns caller-owned display data.
+decrypts a bounded payload, and returns caller-owned display data. Preview
+callers should also bound serialized envelope, authenticated header, and public
+metadata sizes before using untrusted bytes in memory-constrained preview paths.

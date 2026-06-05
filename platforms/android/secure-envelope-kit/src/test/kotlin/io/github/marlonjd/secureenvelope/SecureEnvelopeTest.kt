@@ -31,6 +31,51 @@ class SecureEnvelopeTest {
     }
 
     @Test
+    fun publicByteArrayViewsAreDefensiveCopies() {
+        val metadata = SecureEnvelopeMetadata(
+            keyIdentifier = "key-1".toByteArray(Charsets.UTF_8),
+            publicContext = "preview".toByteArray(Charsets.UTF_8),
+        )
+        val exposedKeyIdentifier = metadata.keyIdentifier
+        val exposedPublicContext = metadata.publicContext
+        exposedKeyIdentifier[0] = 'X'.code.toByte()
+        exposedPublicContext[0] = 'Y'.code.toByte()
+        assertArrayEquals("key-1".toByteArray(Charsets.UTF_8), metadata.keyIdentifier)
+        assertArrayEquals("preview".toByteArray(Charsets.UTF_8), metadata.publicContext)
+
+        val envelope = deterministicEnvelope()
+        val expectedSerialized = envelope.serializedData.copyOf()
+        val expectedSalt = envelope.salt.copyOf()
+        val expectedNonce = envelope.nonce.copyOf()
+        val expectedCiphertext = envelope.ciphertext.copyOf()
+        val expectedTag = envelope.tag.copyOf()
+        val expectedHeader = envelope.authenticatedHeader.copyOf()
+
+        envelope.serializedData[0] = 0
+        envelope.salt[0] = 0
+        envelope.nonce[0] = 0
+        envelope.ciphertext[0] = 0
+        envelope.tag[0] = 0
+        envelope.authenticatedHeader[0] = 0
+
+        assertArrayEquals(expectedSerialized, envelope.serializedData)
+        assertArrayEquals(expectedSalt, envelope.salt)
+        assertArrayEquals(expectedNonce, envelope.nonce)
+        assertArrayEquals(expectedCiphertext, envelope.ciphertext)
+        assertArrayEquals(expectedTag, envelope.tag)
+        assertArrayEquals(expectedHeader, envelope.authenticatedHeader)
+        assertArrayEquals(plaintext, SecureEnvelopeOpener().open(envelope, keyMaterial))
+
+        val previewResult = SecureEnvelopePreview(maxPlaintextBytes = 64).open(
+            envelope.serializedData,
+            keyMaterial,
+        )
+        val expectedPreview = previewResult.plaintext.copyOf()
+        previewResult.plaintext[0] = 0
+        assertArrayEquals(expectedPreview, previewResult.plaintext)
+    }
+
+    @Test
     fun openWithWrongKeyFailsAuthentication() {
         val envelope = deterministicEnvelope()
 
@@ -140,6 +185,33 @@ class SecureEnvelopeTest {
 
         assertEnvelopeError<SecureEnvelopeException.PreviewPayloadTooLarge> {
             preview.open(envelope.serializedData, keyMaterial)
+        }
+    }
+
+    @Test
+    fun previewHelperRejectsOversizedSerializedEnvelopeBeforeParse() {
+        val envelope = deterministicEnvelope()
+        val preview = SecureEnvelopePreview(
+            maxPlaintextBytes = 64,
+            maxSerializedEnvelopeBytes = envelope.serializedData.size - 1,
+        )
+
+        assertEnvelopeError<SecureEnvelopeException.PreviewPayloadTooLarge> {
+            preview.open(envelope.serializedData, wrongKeyMaterial)
+        }
+    }
+
+    @Test
+    fun previewHelperRejectsOversizedPublicMetadataBeforeOpen() {
+        val envelope = deterministicEnvelope()
+        val preview = SecureEnvelopePreview(
+            maxPlaintextBytes = 64,
+            maxSerializedEnvelopeBytes = 4096,
+            maxPublicMetadataBytes = 4,
+        )
+
+        assertEnvelopeError<SecureEnvelopeException.PreviewPayloadTooLarge> {
+            preview.open(envelope.serializedData, wrongKeyMaterial)
         }
     }
 

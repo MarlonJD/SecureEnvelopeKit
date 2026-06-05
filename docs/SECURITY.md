@@ -57,6 +57,13 @@ place plaintext secrets in either field. Public metadata can still leak routing
 information even when payload confidentiality holds; bind these values to the
 surrounding protocol intentionally.
 
+Parsed metadata is only authenticated after a successful open with the expected
+key material. Before AEAD verification succeeds, treat parsed `key_identifier`
+and `public_context` values as attacker-controlled routing hints. They may be
+used to choose candidate key material, but they must not authorize state
+transitions, storage writes, UI trust decisions, or protocol changes unless the
+surrounding layer independently trusts the same context.
+
 ## Tampering and parsing
 
 Field ordering and length prefixes are fixed. Any header or ciphertext tampering,
@@ -73,6 +80,12 @@ preview payloads small and set a maximum size for the display surface. A preview
 helper must not become a hidden full-message decryptor, history-sync path,
 storage lookup, network path, ratchet-advancement path, or UI renderer, and must
 not depend on ML-KEM.
+
+For untrusted preview inputs, apply an envelope/header size budget in addition
+to the plaintext display limit. The public metadata is authenticated only after
+open succeeds, but it is still parsed before decryption; preview callers should
+not allow oversized `public_context` values or serialized envelopes to consume
+extension memory before the payload-size check runs.
 
 ## Caller responsibilities
 

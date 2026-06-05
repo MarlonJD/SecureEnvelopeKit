@@ -17,6 +17,11 @@ Public envelope metadata is authenticated but not encrypted. Treat
 `keyIdentifier` and `publicContext` as routable public data and do not place
 plaintext secrets in either field.
 
+Parsed metadata is authenticated only after `SecureEnvelopeOpener` or
+`SecureEnvelopePreview` successfully verifies AES-GCM with the expected key
+material. Before that point, a parsed envelope's metadata is an untrusted routing
+hint for key lookup, not an authorization or UI trust signal.
+
 ## Algorithms
 
 The only supported v1 suite is `v1AES256GCMHKDFSHA256`:
@@ -55,6 +60,11 @@ preview payloads small and set `maxPlaintextBytes` for the notification or
 display surface. The helper must not be used as a hidden full-message decryptor,
 history-sync path, storage lookup path, network path, ratchet advancement path,
 or UI renderer.
+
+Preview callers should also bound the serialized envelope, authenticated header,
+and public metadata sizes before using untrusted bytes in memory-constrained app
+extension paths. The plaintext display limit does not by itself cap public
+metadata parsed before decryption.
 
 ## Operational Boundaries
 

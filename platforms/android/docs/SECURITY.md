@@ -37,7 +37,10 @@ identifiers, truncation, and trailing bytes are rejected before any decryption.
 
 `keyIdentifier` and `publicContext` are authenticated but world-readable. Do not
 place secrets in them. Stored metadata arrays are defensively copied on input;
-treat exposed arrays as read-only.
+treat exposed arrays as read-only. Parsed metadata is authenticated only after
+`SecureEnvelopeOpener` or `SecureEnvelopePreview` successfully verifies AES-GCM
+with the expected key material; before that point it is an untrusted routing hint
+for key lookup, not an authorization or UI trust signal.
 
 ## Scope boundaries
 
@@ -46,4 +49,6 @@ storage, networking, history sync, ratchets, ML-KEM, or notification UI. Key
 storage/wrapping (for example via Android Keystore) is intentionally out of
 scope for the envelope core; if needed it belongs in a separate optional module.
 The preview helper only parses metadata, authenticates the header as AAD,
-decrypts a bounded payload, and returns caller-owned display data.
+decrypts a bounded payload, and returns caller-owned display data. Preview
+callers should also bound serialized envelope, authenticated header, and public
+metadata sizes before using untrusted bytes in memory-constrained preview paths.

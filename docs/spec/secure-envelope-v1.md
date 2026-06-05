@@ -141,6 +141,13 @@ integrity-protected but world-readable.
 Both are authenticated public data. Callers MUST NOT place secrets in either
 field.
 
+During decode, metadata becomes authenticated only after AES-GCM open succeeds
+with the expected key material. A parser may expose `key_identifier` before
+authentication so callers can locate candidate key material, but callers MUST
+treat parsed metadata as an untrusted hint until AEAD verification succeeds.
+Security decisions that depend on `public_context` MUST either wait for a
+successful open or be checked against independently trusted surrounding context.
+
 ## 7. Encoding (seal)
 
 1. Validate `input_key_material` length `>= 32`; else `invalidKeyMaterial`.
@@ -206,6 +213,11 @@ caller-provided preview payloads (for example notification previews). It MUST:
 
 A preview helper MUST NOT access storage, network, history sync, ratchets,
 ML-KEM, full-message decryption pipelines, or notification UI.
+
+For untrusted preview inputs, implementations SHOULD also apply caller-defined
+serialized-envelope, authenticated-header, or public-metadata byte budgets before
+decryption. These resource limits do not change the v1 wire format; they are
+operational guardrails for memory-constrained preview surfaces.
 
 ## 11. Conformance
 

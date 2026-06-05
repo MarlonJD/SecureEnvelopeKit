@@ -57,10 +57,17 @@ byte[] plaintext = new SecureEnvelopeOpener().Open(bytes.Span, keyMaterial);
 For notification-style previews:
 
 ```csharp
-var preview = new SecureEnvelopePreview(maxPlaintextBytes: 4096);
+var preview = new SecureEnvelopePreview(
+    maxPlaintextBytes: 4096,
+    maxSerializedEnvelopeBytes: 16 * 1024,
+    maxPublicMetadataBytes: 1024);
 SecureEnvelopePreviewResult result = preview.Open(bytes.Span, keyMaterial);
 // result.Metadata, result.Plaintext
 ```
+
+Preview helpers bound the serialized envelope, public metadata, and plaintext
+display payload. Parsed metadata is a routing hint until AEAD verification
+succeeds with the expected key material.
 
 ## Algorithms
 

@@ -62,24 +62,30 @@ enum class SecureEnvelopeSuite(val id: Int) {
  * Public, authenticated (not encrypted) envelope metadata.
  *
  * Treat both fields as routable public data; never place secrets in them.
- * Stored arrays are defensively copied; callers should not mutate the exposed
- * arrays.
+ * Stored arrays are defensively copied, and public getters return fresh copies.
  */
 class SecureEnvelopeMetadata @JvmOverloads constructor(
     keyIdentifier: ByteArray,
     publicContext: ByteArray = ByteArray(0),
 ) {
-    val keyIdentifier: ByteArray = keyIdentifier.copyOf()
-    val publicContext: ByteArray = publicContext.copyOf()
+    private val keyIdentifierBytes: ByteArray = keyIdentifier.copyOf()
+    private val publicContextBytes: ByteArray = publicContext.copyOf()
+
+    val keyIdentifier: ByteArray get() = keyIdentifierBytes.copyOf()
+    val publicContext: ByteArray get() = publicContextBytes.copyOf()
+
+    internal val keyIdentifierUnsafe: ByteArray get() = keyIdentifierBytes
+    internal val publicContextUnsafe: ByteArray get() = publicContextBytes
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is SecureEnvelopeMetadata) return false
-        return keyIdentifier.contentEquals(other.keyIdentifier) &&
-            publicContext.contentEquals(other.publicContext)
+        return keyIdentifierBytes.contentEquals(other.keyIdentifierUnsafe) &&
+            publicContextBytes.contentEquals(other.publicContextUnsafe)
     }
 
-    override fun hashCode(): Int = 31 * keyIdentifier.contentHashCode() + publicContext.contentHashCode()
+    override fun hashCode(): Int =
+        31 * keyIdentifierBytes.contentHashCode() + publicContextBytes.contentHashCode()
 }
 
 /**
@@ -90,19 +96,40 @@ class SecureEnvelope private constructor(
     val version: Int,
     val suite: SecureEnvelopeSuite,
     val metadata: SecureEnvelopeMetadata,
-    val salt: ByteArray,
-    val nonce: ByteArray,
-    val ciphertext: ByteArray,
-    val tag: ByteArray,
-    val serializedData: ByteArray,
-    internal val authenticatedHeader: ByteArray,
+    salt: ByteArray,
+    nonce: ByteArray,
+    ciphertext: ByteArray,
+    tag: ByteArray,
+    serializedData: ByteArray,
+    authenticatedHeader: ByteArray,
 ) {
+    private val saltBytes = salt.copyOf()
+    private val nonceBytes = nonce.copyOf()
+    private val ciphertextBytes = ciphertext.copyOf()
+    private val tagBytes = tag.copyOf()
+    private val serializedBytes = serializedData.copyOf()
+    private val authenticatedHeaderBytes = authenticatedHeader.copyOf()
+
+    val salt: ByteArray get() = saltBytes.copyOf()
+    val nonce: ByteArray get() = nonceBytes.copyOf()
+    val ciphertext: ByteArray get() = ciphertextBytes.copyOf()
+    val tag: ByteArray get() = tagBytes.copyOf()
+    val serializedData: ByteArray get() = serializedBytes.copyOf()
+    internal val authenticatedHeader: ByteArray get() = authenticatedHeaderBytes.copyOf()
+
+    internal val saltUnsafe: ByteArray get() = saltBytes
+    internal val nonceUnsafe: ByteArray get() = nonceBytes
+    internal val ciphertextUnsafe: ByteArray get() = ciphertextBytes
+    internal val tagUnsafe: ByteArray get() = tagBytes
+    internal val serializedDataUnsafe: ByteArray get() = serializedBytes
+    internal val authenticatedHeaderUnsafe: ByteArray get() = authenticatedHeaderBytes
+
     companion object {
         /** Parse and strictly validate a serialized envelope. */
         @JvmStatic
         fun parse(serializedData: ByteArray): SecureEnvelope {
             val envelope = SecureEnvelopeWireFormat.decode(serializedData)
-            if (!envelope.serializedData.contentEquals(serializedData)) {
+            if (!envelope.serializedDataUnsafe.contentEquals(serializedData)) {
                 throw SecureEnvelopeException.MalformedEnvelope()
             }
             return envelope
@@ -142,10 +169,10 @@ class SecureEnvelope private constructor(
                 version = version,
                 suite = suite,
                 metadata = metadata,
-                salt = salt.copyOf(),
-                nonce = nonce.copyOf(),
-                ciphertext = ciphertext.copyOf(),
-                tag = tag.copyOf(),
+                salt = salt,
+                nonce = nonce,
+                ciphertext = ciphertext,
+                tag = tag,
                 serializedData = serialized,
                 authenticatedHeader = header,
             )
@@ -225,15 +252,15 @@ class SecureEnvelopeOpener {
         SecureEnvelopeCrypto.validateKeyMaterial(keyMaterial)
         val key = SecureEnvelopeCrypto.deriveContentKey(
             keyMaterial = keyMaterial,
-            salt = envelope.salt,
+            salt = envelope.saltUnsafe,
             suite = envelope.suite,
         )
         return SecureEnvelopeCrypto.open(
-            ciphertext = envelope.ciphertext,
-            tag = envelope.tag,
+            ciphertext = envelope.ciphertextUnsafe,
+            tag = envelope.tagUnsafe,
             key = key,
-            nonce = envelope.nonce,
-            authenticatedData = envelope.authenticatedHeader,
+            nonce = envelope.nonceUnsafe,
+            authenticatedData = envelope.authenticatedHeaderUnsafe,
         )
     }
 }
@@ -241,23 +268,42 @@ class SecureEnvelopeOpener {
 /** Caller-owned result returned by [SecureEnvelopePreview]. */
 class SecureEnvelopePreviewResult internal constructor(
     val metadata: SecureEnvelopeMetadata,
-    val plaintext: ByteArray,
-)
+    plaintext: ByteArray,
+) {
+    private val plaintextBytes: ByteArray = plaintext.copyOf()
+    val plaintext: ByteArray get() = plaintextBytes.copyOf()
+}
 
 /**
  * Preview-safe helper for small, caller-provided preview payloads. It parses
  * metadata, authenticates the deterministic header as AAD, decrypts a bounded
- * payload, and returns caller-owned display data. It has no storage, network,
+ * payload, and returns caller-owned display data. It bounds serialized envelope,
+ * public metadata, and plaintext bytes; parsed metadata remains an untrusted
+ * routing hint until AEAD verification succeeds. It has no storage, network,
  * sync, ratchet, ML-KEM, or notification-UI dependencies.
  */
 class SecureEnvelopePreview @JvmOverloads constructor(
     val maxPlaintextBytes: Int = 4096,
+    val maxSerializedEnvelopeBytes: Int = 16 * 1024,
+    val maxPublicMetadataBytes: Int = 1024,
 ) {
     fun open(serializedData: ByteArray, keyMaterial: ByteArray): SecureEnvelopePreviewResult {
-        val envelope = SecureEnvelope.parse(serializedData)
-        if (maxPlaintextBytes < 0 || envelope.ciphertext.size > maxPlaintextBytes) {
+        if (maxSerializedEnvelopeBytes < 0 || serializedData.size > maxSerializedEnvelopeBytes) {
             throw SecureEnvelopeException.PreviewPayloadTooLarge()
         }
+
+        val envelope = SecureEnvelope.parse(serializedData)
+        val metadataByteCount =
+            envelope.metadata.keyIdentifierUnsafe.size.toLong() +
+                envelope.metadata.publicContextUnsafe.size.toLong()
+        if (maxPublicMetadataBytes < 0 ||
+            metadataByteCount > maxPublicMetadataBytes.toLong() ||
+            maxPlaintextBytes < 0 ||
+            envelope.ciphertextUnsafe.size > maxPlaintextBytes
+        ) {
+            throw SecureEnvelopeException.PreviewPayloadTooLarge()
+        }
+
         val plaintext = SecureEnvelopeOpener().open(envelope, keyMaterial)
         if (plaintext.size > maxPlaintextBytes) {
             throw SecureEnvelopeException.PreviewPayloadTooLarge()
@@ -400,10 +446,10 @@ internal object SecureEnvelopeWireFormat {
     private const val U32_MAX = 0xFFFFFFFFL
 
     fun validateMetadata(metadata: SecureEnvelopeMetadata) {
-        if (metadata.keyIdentifier.isEmpty() || metadata.keyIdentifier.size > U16_MAX) {
+        if (metadata.keyIdentifierUnsafe.isEmpty() || metadata.keyIdentifierUnsafe.size > U16_MAX) {
             throw SecureEnvelopeException.InvalidMetadata()
         }
-        if (metadata.publicContext.size.toLong() > U32_MAX) {
+        if (metadata.publicContextUnsafe.size.toLong() > U32_MAX) {
             throw SecureEnvelopeException.InvalidMetadata()
         }
     }
@@ -429,10 +475,10 @@ internal object SecureEnvelopeWireFormat {
         out.write(MAGIC)
         out.writeU8(version)
         out.writeU16(suite.id)
-        out.writeU16(metadata.keyIdentifier.size)
-        out.write(metadata.keyIdentifier)
-        out.writeU32(metadata.publicContext.size)
-        out.write(metadata.publicContext)
+        out.writeU16(metadata.keyIdentifierUnsafe.size)
+        out.write(metadata.keyIdentifierUnsafe)
+        out.writeU32(metadata.publicContextUnsafe.size)
+        out.write(metadata.publicContextUnsafe)
         out.writeU8(salt.size)
         out.write(salt)
         out.writeU8(nonce.size)
@@ -482,7 +528,7 @@ internal object SecureEnvelopeWireFormat {
         validateMetadata(metadata)
 
         val envelope = SecureEnvelope.build(version, suite, metadata, salt, nonce, ciphertext, tag)
-        if (envelope.authenticatedHeader.size != headerLength) {
+        if (envelope.authenticatedHeaderUnsafe.size != headerLength) {
             throw SecureEnvelopeException.MalformedEnvelope()
         }
         return envelope

@@ -70,9 +70,17 @@ val plaintext = SecureEnvelopeOpener().open(bytes, keyMaterial)
 For notification-style previews:
 
 ```kotlin
-val preview = SecureEnvelopePreview(maxPlaintextBytes = 4096)
+val preview = SecureEnvelopePreview(
+    maxPlaintextBytes = 4096,
+    maxSerializedEnvelopeBytes = 16 * 1024,
+    maxPublicMetadataBytes = 1024,
+)
 val result = preview.open(bytes, keyMaterial)        // result.metadata, result.plaintext
 ```
+
+Preview helpers bound the serialized envelope, public metadata, and plaintext
+display payload. Parsed metadata is a routing hint until AEAD verification
+succeeds with the expected key material.
 
 ## Algorithms
 

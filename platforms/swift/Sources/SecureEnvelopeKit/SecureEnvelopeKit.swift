@@ -231,16 +231,39 @@ public struct SecureEnvelopePreviewResult: Equatable, Sendable {
     }
 }
 
+/// Preview-safe helper for small caller-provided preview envelopes.
+///
+/// The helper bounds serialized envelope, public metadata, and plaintext bytes.
+/// Parsed metadata remains an untrusted routing hint until AEAD verification
+/// succeeds with the expected key material.
 public struct SecureEnvelopePreview {
     public let maxPlaintextBytes: Int
+    public let maxSerializedEnvelopeBytes: Int
+    public let maxPublicMetadataBytes: Int
 
-    public init(maxPlaintextBytes: Int = 4096) {
+    public init(
+        maxPlaintextBytes: Int = 4096,
+        maxSerializedEnvelopeBytes: Int = 16 * 1024,
+        maxPublicMetadataBytes: Int = 1024
+    ) {
         self.maxPlaintextBytes = maxPlaintextBytes
+        self.maxSerializedEnvelopeBytes = maxSerializedEnvelopeBytes
+        self.maxPublicMetadataBytes = maxPublicMetadataBytes
     }
 
     public func open(serializedData: Data, keyMaterial: Data) throws -> SecureEnvelopePreviewResult {
+        guard maxSerializedEnvelopeBytes >= 0,
+              serializedData.count <= maxSerializedEnvelopeBytes else {
+            throw SecureEnvelopeError.previewPayloadTooLarge
+        }
+
         let envelope = try SecureEnvelope(serializedData: serializedData)
-        guard maxPlaintextBytes >= 0,
+        let keyIdentifierByteCount = envelope.metadata.keyIdentifier.count
+        let publicContextByteCount = envelope.metadata.publicContext.count
+        guard maxPublicMetadataBytes >= 0,
+              keyIdentifierByteCount <= maxPublicMetadataBytes,
+              publicContextByteCount <= maxPublicMetadataBytes - keyIdentifierByteCount,
+              maxPlaintextBytes >= 0,
               envelope.ciphertext.count <= maxPlaintextBytes else {
             throw SecureEnvelopeError.previewPayloadTooLarge
         }

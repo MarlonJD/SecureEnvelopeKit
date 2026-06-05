@@ -115,8 +115,20 @@ this package.
 
 `SecureEnvelopePreview` is for small caller-provided preview payload envelopes.
 It parses metadata, authenticates the deterministic header as AAD, decrypts the
-preview payload, enforces a caller-owned maximum plaintext size, and returns
+preview payload, enforces caller-owned size limits, and returns
 `SecureEnvelopePreviewResult`.
+
+```swift
+let preview = SecureEnvelopePreview(
+    maxPlaintextBytes: 4096,
+    maxSerializedEnvelopeBytes: 16 * 1024,
+    maxPublicMetadataBytes: 1024
+)
+```
+
+Preview helpers bound the serialized envelope, public metadata, and plaintext
+display payload. Parsed metadata is a routing hint until AEAD verification
+succeeds with the expected key material.
 
 The preview helper is synchronous and has no storage, network, synchronization,
 ratchet, ML-KEM, history, or notification UI dependencies.

@@ -311,22 +311,40 @@ public sealed class SecureEnvelopePreviewResult
 /// <summary>
 /// Preview-safe helper for small, caller-provided preview payloads. It parses
 /// metadata, authenticates the deterministic header as AAD, decrypts a bounded
-/// payload, and returns caller-owned display data. It has no storage, network,
+/// payload, and returns caller-owned display data. It bounds serialized envelope,
+/// public metadata, and plaintext bytes; parsed metadata remains an untrusted
+/// routing hint until AEAD verification succeeds. It has no storage, network,
 /// sync, ratchet, ML-KEM, or notification-UI dependencies.
 /// </summary>
 public sealed class SecureEnvelopePreview
 {
-    public SecureEnvelopePreview(int maxPlaintextBytes = 4096)
+    public SecureEnvelopePreview(
+        int maxPlaintextBytes = 4096,
+        int maxSerializedEnvelopeBytes = 16 * 1024,
+        int maxPublicMetadataBytes = 1024)
     {
         MaxPlaintextBytes = maxPlaintextBytes;
+        MaxSerializedEnvelopeBytes = maxSerializedEnvelopeBytes;
+        MaxPublicMetadataBytes = maxPublicMetadataBytes;
     }
 
     public int MaxPlaintextBytes { get; }
+    public int MaxSerializedEnvelopeBytes { get; }
+    public int MaxPublicMetadataBytes { get; }
 
     public SecureEnvelopePreviewResult Open(ReadOnlySpan<byte> serializedData, ReadOnlySpan<byte> keyMaterial)
     {
+        if (MaxSerializedEnvelopeBytes < 0 || serializedData.Length > MaxSerializedEnvelopeBytes)
+        {
+            throw SecureEnvelopeException.PreviewPayloadTooLarge();
+        }
+
         var envelope = SecureEnvelope.Parse(serializedData);
-        if (MaxPlaintextBytes < 0 || envelope.Ciphertext.Length > MaxPlaintextBytes)
+        var metadataByteCount = (long)envelope.Metadata.KeyIdentifier.Length + envelope.Metadata.PublicContext.Length;
+        if (MaxPublicMetadataBytes < 0 ||
+            metadataByteCount > MaxPublicMetadataBytes ||
+            MaxPlaintextBytes < 0 ||
+            envelope.Ciphertext.Length > MaxPlaintextBytes)
         {
             throw SecureEnvelopeException.PreviewPayloadTooLarge();
         }

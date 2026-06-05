@@ -154,6 +154,31 @@ public class SecureEnvelopeTests
     }
 
     [Fact]
+    public void PreviewHelperRejectsOversizedSerializedEnvelopeBeforeParse()
+    {
+        var envelope = DeterministicEnvelope();
+        var preview = new SecureEnvelopePreview(
+            maxPlaintextBytes: 64,
+            maxSerializedEnvelopeBytes: envelope.SerializedData.Length - 1);
+
+        AssertEnvelopeError(SecureEnvelopeError.PreviewPayloadTooLarge, () =>
+            preview.Open(envelope.SerializedData.Span, WrongKeyMaterial));
+    }
+
+    [Fact]
+    public void PreviewHelperRejectsOversizedPublicMetadataBeforeOpen()
+    {
+        var envelope = DeterministicEnvelope();
+        var preview = new SecureEnvelopePreview(
+            maxPlaintextBytes: 64,
+            maxSerializedEnvelopeBytes: 4096,
+            maxPublicMetadataBytes: 4);
+
+        AssertEnvelopeError(SecureEnvelopeError.PreviewPayloadTooLarge, () =>
+            preview.Open(envelope.SerializedData.Span, WrongKeyMaterial));
+    }
+
+    [Fact]
     public void InvalidInputsAreRejected()
     {
         AssertEnvelopeError(SecureEnvelopeError.InvalidKeyMaterial, () =>

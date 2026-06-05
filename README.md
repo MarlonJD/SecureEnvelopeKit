@@ -86,8 +86,21 @@ This package intentionally stops at the versioned envelope boundary:
 - authenticated header/AAD bytes,
 - AES-256-GCM seal/open,
 - HKDF-SHA-256 envelope key derivation,
-- preview-only open helpers,
+- preview-only open helpers with serialized-envelope, public-metadata, and
+  plaintext byte budgets,
 - shared cross-platform fixtures.
+
+`key_identifier` and `public_context` are public authenticated metadata. Parsers
+may expose them before decryption so callers can find candidate key material,
+but those parsed values are attacker-controlled routing hints until AEAD
+verification succeeds with the expected key material. Do not use parsed metadata
+for authorization, storage writes, UI trust, or protocol state transitions before
+a successful open.
+
+Preview helpers are for small caller-provided display payloads. Configure the
+serialized envelope, public metadata, and plaintext limits for the target
+surface; these limits are preview resource guardrails and do not change the v1
+wire format.
 
 A future session layer can consume SecureEnvelopeKit together with an ML-KEM
 provider such as `mlkem-kit`, but it must own session state, ratchet

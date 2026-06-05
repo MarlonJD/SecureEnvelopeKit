@@ -130,6 +130,31 @@ final class SecureEnvelopeKitTests: XCTestCase {
         }
     }
 
+    func testPreviewHelperRejectsOversizedSerializedEnvelopeBeforeParse() throws {
+        let envelope = try deterministicEnvelope()
+        let preview = SecureEnvelopePreview(
+            maxPlaintextBytes: 64,
+            maxSerializedEnvelopeBytes: envelope.serializedData.count - 1
+        )
+
+        XCTAssertThrowsSecureEnvelopeError(.previewPayloadTooLarge) {
+            _ = try preview.open(serializedData: envelope.serializedData, keyMaterial: wrongKeyMaterial)
+        }
+    }
+
+    func testPreviewHelperRejectsOversizedPublicMetadataBeforeOpen() throws {
+        let preview = SecureEnvelopePreview(
+            maxPlaintextBytes: 64,
+            maxSerializedEnvelopeBytes: 4096,
+            maxPublicMetadataBytes: 4
+        )
+        let envelope = try deterministicEnvelope()
+
+        XCTAssertThrowsSecureEnvelopeError(.previewPayloadTooLarge) {
+            _ = try preview.open(serializedData: envelope.serializedData, keyMaterial: wrongKeyMaterial)
+        }
+    }
+
     func testHKDFDerivationIsDeterministic() throws {
         let fixture = try SecureEnvelopeV1Fixture.load()
         let first = try SecureEnvelopeCrypto.deriveContentKeyBytes(
